@@ -31,12 +31,13 @@ const (
 	Section
 	InvertedSection
 	Partial
+	VariablePartial
 )
 
 // Skip all whitespaces apeared after these types of tags until end of line
 // if the line only contains a tag and whitespaces.
 const (
-	SkipWhitespaceTagTypes = "#^/<>=!"
+	SkipWhitespaceTagTypes = "#^/<>=!$"
 )
 
 func (t TagType) String() string {
@@ -52,6 +53,7 @@ var tagNames = []string{
 	Section:         "Section",
 	InvertedSection: "InvertedSection",
 	Partial:         "Partial",
+	VariablePartial: "VariablePartial",
 }
 
 // Tag represents the different mustache tag types.
@@ -87,9 +89,10 @@ type sectionElement struct {
 }
 
 type partialElement struct {
-	name   string
-	indent string
-	prov   PartialProvider
+	name     string
+	indent   string
+	prov     PartialProvider
+	variable bool
 }
 
 // Template represents a compilde mustache template
@@ -369,6 +372,14 @@ func (tmpl *Template) parseSection(section *sectionElement) error {
 				return err
 			}
 			section.elems = append(section.elems, partial)
+		case '$':
+			name := strings.TrimSpace(tag[1:])
+			partial, err := tmpl.parsePartial(name, textResult.padding)
+			if err != nil {
+				return err
+			}
+			partial.variable = true
+			tmpl.elems = append(tmpl.elems, partial)
 		case '=':
 			if tag[len(tag)-1] != '=' {
 				return parseError{tmpl.curline, "Invalid meta tag"}
@@ -440,6 +451,14 @@ func (tmpl *Template) parse() error {
 			if err != nil {
 				return err
 			}
+			tmpl.elems = append(tmpl.elems, partial)
+		case '$':
+			name := strings.TrimSpace(tag[1:])
+			partial, err := tmpl.parsePartial(name, textResult.padding)
+			if err != nil {
+				return err
+			}
+			partial.variable = true
 			tmpl.elems = append(tmpl.elems, partial)
 		case '=':
 			if tag[len(tag)-1] != '=' {
@@ -639,9 +658,19 @@ func renderElement(element interface{}, contextChain []interface{}, buf io.Write
 			return err
 		}
 	case *partialElement:
-		partial, err := getPartials(elem.prov, elem.name, elem.indent)
-		if err != nil {
-			return err
+		var partial *Template
+		var partialErr error
+		if elem.variable {
+			val, err := lookup(contextChain, elem.name, false)
+			if err != nil {
+				return err
+			}
+			partial, partialErr = getPartials(elem.prov, val.String(), elem.indent)
+		} else {
+			partial, partialErr = getPartials(elem.prov, elem.name, elem.indent)
+		}
+		if partialErr != nil {
+			return partialErr
 		}
 		if err := partial.renderTemplate(contextChain, buf); err != nil {
 			return err
