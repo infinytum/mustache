@@ -379,7 +379,7 @@ func (tmpl *Template) parseSection(section *sectionElement) error {
 				return err
 			}
 			partial.variable = true
-			tmpl.elems = append(tmpl.elems, partial)
+			section.elems = append(section.elems, partial)
 		case '=':
 			if tag[len(tag)-1] != '=' {
 				return parseError{tmpl.curline, "Invalid meta tag"}
